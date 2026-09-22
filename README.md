@@ -183,9 +183,9 @@ Agent 负责智能流程，Service 负责业务逻辑，Repository 负责数据�
 
 ## 架构图
 
-![System Architecture](./architecture.jpg)
+![系统架构](./architecture.svg)
 
-架构图待补充。绘制时可参考原项目的分层画法：自上而下依次为 Web 层、API 层、Agents 层、Services 层、DB 层，并在 Agents 层展开任务分类、咨询、预约工单、车主行为四条链路。
+自上而下依次为 Web 层、API 层、Agents 层、Services 层、DB 层；Agents 层展开任务分类主调度器与三个专业 Agent 的派发关系；右侧补充调用方向约束、RAG 咨询链路，以及技师与工位双资源排班的作业示意（技师占用整段工时，工位按工序分段，跨工位时计入转移时间）。
 
 ## 技术栈
 
@@ -257,6 +257,7 @@ Smart auto service AI agent/
 ├── app.py                           # 应用入口
 ├── requirements.txt                 # Python 依赖
 ├── .env.example                     # 环境变量模板
+├── architecture.svg                 # 系统架构图
 └── README.md                        # 项目说明
 ```
 
