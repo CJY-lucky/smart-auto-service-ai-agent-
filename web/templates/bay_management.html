@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}工位管理 · 智保养{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <div class="card">
+        <h2>工位与设备</h2>
+        <div id="bayList" class="muted">加载中…</div>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h2>新增工位</h2>
+            <div class="grid">
+                <input id="bayName" placeholder="工位名称，例如：举升机工位C">
+                <select id="bayType"></select>
+                <input id="equipment" placeholder="设备清单，用逗号分隔">
+                <button id="addBtn">保存</button>
+            </div>
+        </div>
+        <div class="card">
+            <h2>今日工位占用</h2>
+            <div id="occupancy" class="muted">加载中…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadTypes() {
+    const result = await api("/api/bays/types");
+    const select = document.getElementById("bayType");
+    select.innerHTML = "";
+    (result.data || []).forEach(function (name) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+    });
+}
+
+async function loadBays() {
+    const result = await api("/api/bays?active_only=false");
+    const bays = result.data || [];
+    const box = document.getElementById("bayList");
+    if (!bays.length) { box.innerHTML = "还没有工位。"; return; }
+    box.innerHTML = "<table><thead><tr><th>名称</th><th>类型</th><th>设备</th><th>状态</th></tr></thead><tbody>" +
+        bays.map(function (bay) {
+            const status = bay.is_active ? "<span class=\"badge ok\">可用</span>" : "<span class=\"badge danger\">停用</span>";
+            return "<tr><td>" + bay.name + "</td><td><span class=\"badge info\">" + bay.bay_type + "</span></td><td class=\"muted\">" +
+                (bay.equipment || []).join("、") + "</td><td>" + status + "</td></tr>";
+        }).join("") + "</tbody></table>";
+}
+
+async function loadOccupancy() {
+    const result = await api("/api/bays/schedules/today");
+    const rows = result.data || [];
+    const box = document.getElementById("occupancy");
+    if (!rows.length) { box.innerHTML = "今天还没有占用记录。"; return; }
+    box.innerHTML = "<table><thead><tr><th>工位</th><th>类型</th><th>占用时段</th></tr></thead><tbody>" +
+        rows.map(function (row) {
+            const periods = (row.busy_periods || []).map(function (item) { return item.start + "-" + item.end; }).join("、") || "空闲";
+            return "<tr><td>" + row.name + "</td><td>" + row.bay_type + "</td><td>" + periods + "</td></tr>";
+        }).join("") + "</tbody></table>";
+}
+
+document.getElementById("addBtn").addEventListener("click", async function () {
+    const name = document.getElementById("bayName").value.trim();
+    if (!name) { alert("请填写工位名称"); return; }
+    const equipment = document.getElementById("equipment").value.split(/[,，]/).map(function (item) { return item.trim(); }).filter(Boolean);
+    await api("/api/bays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, bay_type: document.getElementById("bayType").value, equipment: equipment })
+    });
+    document.getElementById("bayName").value = "";
+    loadBays();
+    loadOccupancy();
+});
+
+loadTypes();
+loadBays();
+loadOccupancy();
+</script>
+{% endblock %}

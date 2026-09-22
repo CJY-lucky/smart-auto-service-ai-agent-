@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}智能对话预约 · 智保养{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <div class="card">
+        <h2>和门店顾问对话</h2>
+        <div class="muted" style="margin-bottom:10px">可以直接说需求，例如“明天上午10点，京A12345，换机油”，系统会解析意图、校验技师与工位，再给出确认。</div>
+        <div id="chat" class="chat"></div>
+        <div class="row" style="margin-top:12px">
+            <input id="message" placeholder="说说您的需求…" autocomplete="off">
+            <button id="send">发送</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+            <button class="ghost small" data-quick="明天上午10点给我的京A12345换机油">换个机油</button>
+            <button class="ghost small" data-quick="刹车有异响是怎么回事">刹车异响咨询</button>
+            <button class="ghost small" data-quick="我的车该做什么保养了">查保养建议</button>
+            <button class="ghost small" data-quick="我的车辆档案和下次保养时间">查车辆档案</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+            <span class="muted">车主标识</span>
+            <input id="ownerRef" value="default_owner" style="max-width:220px">
+            <button class="ghost small" id="resetChat">清空对话</button>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>今日工单</h2>
+            <div id="todayOrders" class="muted">加载中…</div>
+        </div>
+        <div class="card">
+            <h2>门店资源</h2>
+            <div id="resourceStats" class="grid grid-2"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const chatBox = document.getElementById("chat");
+const input = document.getElementById("message");
+const ownerRefInput = document.getElementById("ownerRef");
+
+function appendMessage(kind, who, text) {
+    const wrap = el("div", "msg " + kind);
+    const holder = el("div");
+    if (who) holder.appendChild(el("div", "who", who));
+    const bubble = el("div", "bubble", text || "");
+    holder.appendChild(bubble);
+    wrap.appendChild(holder);
+    chatBox.appendChild(wrap);
+    chatBox.scrollTop = chatBox.scrollHeight;
+    return {
+        append: function (chunk) {
+            bubble.textContent += chunk;
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return bubble;
+        }
+    };
+}
+
+async function sendMessage(text) {
+    if (!text) return;
+    appendMessage("user", "车主", text);
+    const state = { buffer: "", current: null };
+    const response = await fetch("/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, owner_ref: ownerRefInput.value || "default_owner" })
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    const markerRe = /\[(THOUGHT|REPLY)\]\[([^\]]+)\]/;
+
+    while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        state.buffer += decoder.decode(chunk.value, { stream: true });
+        let match = state.buffer.match(markerRe);
+        while (match) {
+            const index = state.buffer.indexOf(match[0]);
+            const before = state.buffer.slice(0, index);
+            if (before && state.current) state.current.append(before);
+            state.buffer = state.buffer.slice(index + match[0].length);
+            const kind = match[1] === "THOUGHT" ? "thought" : "bot";
+            state.current = appendMessage(kind, match[2], "");
+            match = state.buffer.match(markerRe);
+        }
+        if (state.current && state.buffer) {
+            state.current.append(state.buffer);
+            state.buffer = "";
+        }
+    }
+}
+
+document.getElementById("send").addEventListener("click", async function () {
+    const text = input.value.trim();
+    input.value = "";
+    await sendMessage(text);
+    loadOrders();
+});
+input.addEventListener("keydown", async function (event) {
+    if (event.key === "Enter") {
+        const text = input.value.trim();
+        input.value = "";
+        await sendMessage(text);
+        loadOrders();
+    }
+});
+document.querySelectorAll("[data-quick]").forEach(function (button) {
+    button.addEventListener("click", async function () {
+        await sendMessage(button.dataset.quick);
+        loadOrders();
+    });
+});
+document.getElementById("resetChat").addEventListener("click", function () {
+    chatBox.innerHTML = "";
+});
+
+async function loadOrders() {
+    const result = await api("/api/service-booking/orders?limit=8");
+    const box = document.getElementById("todayOrders");
+    const orders = (result.data || []).filter(function (order) { return order.status === "created"; });
+    if (!orders.length) { box.innerHTML = '<div class="muted">今天还没有安排中的工单。</div>'; return; }
+    const rows = orders.map(function (order) {
+        return "<tr><td>" + order.order_no + "</td><td>" + hhmm(order.start_time) + "-" + hhmm(order.end_time) +
+            "</td><td>" + (order.item_codes || []).length + " 项</td><td>" + order.estimated_minutes +
+            " 分钟</td><td>" + order.amount + " 元</td></tr>";
+    }).join("");
+    box.innerHTML = "<table><thead><tr><th>工单号</th><th>时间</th><th>项目</th><th>工时</th><th>金额</th></tr></thead><tbody>" + rows + "</tbody></table>";
+}
+
+async function loadResources() {
+    const technicians = await api("/api/technicians");
+    const bays = await api("/api/bays");
+    const orders = await api("/api/service-booking/statistics");
+    const stats = orders.data || {};
+    const box = document.getElementById("resourceStats");
+    box.innerHTML = "";
+    const items = [
+        ["在岗技师", (technicians.data || []).length, "人"],
+        ["可用工位", (bays.data || []).length, "个"],
+        ["进行中工单", (stats.by_status || {}).created || 0, "单"],
+        ["累计工单", stats.total || 0, "单"]
+    ];
+    items.forEach(function (item) {
+        const card = el("div");
+        card.appendChild(el("div", "stat", item[1] + " " + item[2]));
+        card.appendChild(el("div", "stat-label", item[0]));
+        box.appendChild(card);
+    });
+}
+
+appendMessage("bot", "门店顾问", "您好，我是门店的智能服务顾问。可以帮您安排保养预约，也能解答保养周期、价格、故障灯这类问题。");
+loadOrders();
+loadResources();
+</script>
+{% endblock %}

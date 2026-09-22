@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}车间排班看板 · 智保养{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="row">
+        <h2 style="margin:0">车间排班看板</h2>
+        <div class="spacer"></div>
+        <input id="day" type="date" style="max-width:180px">
+        <button id="loadBtn">查询</button>
+    </div>
+    <div class="muted" style="margin-top:6px">一行代表一名技师或一个工位，色块表示已被工单占用的时段（9:00-20:00）。</div>
+</div>
+
+<div class="card">
+    <h2>技师占用</h2>
+    <div id="techTimeline" class="muted">加载中…</div>
+</div>
+
+<div class="card">
+    <h2>工位占用</h2>
+    <div id="bayTimeline" class="muted">加载中…</div>
+</div>
+
+<div class="card">
+    <h2>当日工单</h2>
+    <div id="orderTable" class="muted">加载中…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const OPEN_HOUR = 9;
+const CLOSE_HOUR = 20;
+const TOTAL_MINUTES = (CLOSE_HOUR - OPEN_HOUR) * 60;
+
+function renderTimeline(rows, nameKey) {
+    if (!rows.length) return "<div class=\"muted\">没有数据。</div>";
+    let html = "";
+    rows.forEach(function (row) {
+        html += "<div style=\"margin-bottom:12px\"><div class=\"muted\">" + row[nameKey] +
+            (row.shift ? "（" + row.shift + "）" : "") + "</div><div class=\"timeline\">";
+        (row.busy_periods || []).forEach(function (period) {
+            const start = toMinutes(period.start);
+            const end = toMinutes(period.end);
+            const left = Math.max((start - OPEN_HOUR * 60) / TOTAL_MINUTES * 100, 0);
+            const width = Math.max((end - start) / TOTAL_MINUTES * 100, 1.5);
+            html += "<div class=\"block\" style=\"left:" + left + "%;width:" + width + "%\" title=\"" +
+                period.start + "-" + period.end + " " + (period.order_no || "") + "\">" +
+                period.start + "-" + period.end + "</div>";
+        });
+        html += "</div><div class=\"timeline-hours\"><span>09:00</span><span>12:00</span><span>15:00</span><span>18:00</span><span>20:00</span></div></div>";
+    });
+    return html;
+}
+
+function toMinutes(text) {
+    const parts = String(text).split(":");
+    return parseInt(parts[0], 10) * 60 + parseInt(parts[1] || "0", 10);
+}
+
+async function loadBoard() {
+    const day = document.getElementById("day").value;
+    const query = day ? "?day=" + day : "";
+    const result = await api("/api/service-booking/board" + query);
+    const data = result.data || {};
+    document.getElementById("techTimeline").innerHTML = renderTimeline(data.technicians || [], "name");
+    document.getElementById("bayTimeline").innerHTML = renderTimeline(data.bays || [], "name");
+    const orders = data.orders || [];
+    const box = document.getElementById("orderTable");
+    if (!orders.length) { box.innerHTML = "这一天还没有工单。"; return; }
+    box.innerHTML = "<table><thead><tr><th>工单号</th><th>时间</th><th>车辆</th><th>技师</th><th>工位</th><th>项目</th><th>状态</th></tr></thead><tbody>" +
+        orders.map(function (order) {
+            return "<tr><td>" + order.order_no + "</td><td>" + hhmm(order.start_time) + "-" + hhmm(order.end_time) +
+                "</td><td>" + (order.plate_no || "-") + "</td><td>" + (order.technician_name || "-") +
+                "</td><td>" + (order.bay_name || "-") + "</td><td class=\"muted\">" + (order.item_codes || []).join("、") +
+                "</td><td><span class=\"badge\">" + order.status + "</span></td></tr>";
+        }).join("") + "</tbody></table>";
+}
+
+document.getElementById("loadBtn").addEventListener("click", loadBoard);
+loadBoard();
+</script>
+{% endblock %}

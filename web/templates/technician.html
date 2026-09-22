@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}技师管理 · 智保养{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <div class="card">
+        <h2>技师与资质</h2>
+        <div id="techList" class="muted">加载中…</div>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h2>新增技师</h2>
+            <div class="grid grid-2">
+                <input id="name" placeholder="姓名">
+                <select id="gender"><option>男</option><option>女</option></select>
+                <select id="level"><option>初级</option><option>中级</option><option>高级</option></select>
+                <select id="shift"><option>早班</option><option>晚班</option><option>全天班</option></select>
+            </div>
+            <div class="muted" style="margin:10px 0 4px">资质（可多选）</div>
+            <div id="certBox" class="row"></div>
+            <div class="muted" style="margin:10px 0 4px">专长描述（用于偏好匹配）</div>
+            <textarea id="specialties" placeholder="例如：擅长四轮定位与底盘异响排查"></textarea>
+            <button id="addBtn" style="margin-top:10px">保存</button>
+        </div>
+        <div class="card">
+            <h2>今日技师排班</h2>
+            <div id="scheduleList" class="muted">加载中…</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let certifications = [];
+
+async function loadOptions() {
+    const result = await api("/api/technicians/options");
+    certifications = (result.data || {}).certifications || [];
+    const box = document.getElementById("certBox");
+    box.innerHTML = "";
+    certifications.forEach(function (name) {
+        const label = document.createElement("label");
+        label.className = "muted";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = name;
+        checkbox.style.width = "auto";
+        checkbox.style.marginRight = "6px";
+        label.appendChild(checkbox);
+        label.appendChild(document.createTextNode(name));
+        box.appendChild(label);
+    });
+}
+
+async function loadTechnicians() {
+    const result = await api("/api/technicians");
+    const technicians = result.data || [];
+    const box = document.getElementById("techList");
+    if (!technicians.length) { box.innerHTML = "还没有技师。"; return; }
+    box.innerHTML = "<table><thead><tr><th>姓名</th><th>等级</th><th>班次</th><th>资质</th><th>专长</th><th></th></tr></thead><tbody>" +
+        technicians.map(function (tech) {
+            return "<tr><td>" + tech.name + "</td><td>" + tech.level + "</td><td>" + tech.shift + "</td><td>" +
+                (tech.certifications || []).map(function (cert) { return "<span class=\"badge\">" + cert + "</span>"; }).join(" ") +
+                "</td><td class=\"muted\">" + (tech.specialties || "") + "</td><td>" +
+                "<button class=\"ghost small\" data-off=\"" + tech.id + "\">停用</button></td></tr>";
+        }).join("") + "</tbody></table>";
+    document.querySelectorAll("[data-off]").forEach(function (button) {
+        button.addEventListener("click", async function () {
+            await api("/api/technicians/" + button.dataset.off, { method: "DELETE" });
+            loadTechnicians();
+        });
+    });
+}
+
+async function loadSchedules() {
+    const result = await api("/api/technicians/schedules/today");
+    const rows = result.data || [];
+    const box = document.getElementById("scheduleList");
+    if (!rows.length) { box.innerHTML = "今天还没有排班记录。"; return; }
+    box.innerHTML = "<table><thead><tr><th>技师</th><th>班次</th><th>已排时段</th></tr></thead><tbody>" +
+        rows.map(function (row) {
+            const periods = (row.busy_periods || []).map(function (item) { return item.start + "-" + item.end; }).join("、") || "空闲";
+            return "<tr><td>" + row.technician_name + "</td><td>" + row.shift + "</td><td>" + periods + "</td></tr>";
+        }).join("") + "</tbody></table>";
+}
+
+document.getElementById("addBtn").addEventListener("click", async function () {
+    const name = document.getElementById("name").value.trim();
+    if (!name) { alert("请填写姓名"); return; }
+    const certs = Array.from(document.querySelectorAll("#certBox input:checked")).map(function (item) { return item.value; });
+    await api("/api/technicians", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            name: name,
+            gender: document.getElementById("gender").value,
+            level: document.getElementById("level").value,
+            shift: document.getElementById("shift").value,
+            certifications: certs,
+            specialties: document.getElementById("specialties").value
+        })
+    });
+    document.getElementById("name").value = "";
+    document.getElementById("specialties").value = "";
+    loadTechnicians();
+});
+
+loadOptions();
+loadTechnicians();
+loadSchedules();
+</script>
+{% endblock %}

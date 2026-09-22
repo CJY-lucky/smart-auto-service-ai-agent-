@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}车主行为分析 · 智保养{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="row">
+        <h2 style="margin:0">车主行为分析</h2>
+        <div class="spacer"></div>
+        <input id="ownerRef" value="default_owner" style="max-width:220px">
+        <button id="loadBtn">查询</button>
+        <button class="ghost" id="generateBtn">生成待发送提醒</button>
+    </div>
+</div>
+
+<div class="card">
+    <div id="statCards" class="grid grid-4"></div>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>偏好与习惯</h2>
+        <div id="preferenceBox" class="muted">加载中…</div>
+        <h3>行为流水</h3>
+        <div id="behaviorBox" class="muted"></div>
+    </div>
+    <div class="card">
+        <h2>到期提醒</h2>
+        <div id="dueBox" class="muted">加载中…</div>
+        <h3>回访话术</h3>
+        <div class="row">
+            <button class="small" id="remindBtn">生成回访提醒（含可约时段）</button>
+        </div>
+        <div id="reminderBox" class="muted" style="margin-top:10px">还没有生成。</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function statCard(label, value) {
+    return "<div><div class=\"stat\">" + (value === null || value === undefined ? "-" : value) +
+        "</div><div class=\"stat-label\">" + label + "</div></div>";
+}
+
+async function loadAnalysis() {
+    const ownerRef = document.getElementById("ownerRef").value.trim() || "default_owner";
+    const result = await api("/api/vehicle-behavior/analysis?owner_ref=" + encodeURIComponent(ownerRef));
+    const data = result.data || {};
+
+    document.getElementById("statCards").innerHTML =
+        statCard("累计到店", data.total_appointments) +
+        statCard("进行中预约", data.active_appointments) +
+        statCard("咨询次数", data.consultation_count) +
+        statCard("取消次数", data.cancel_count) +
+        statCard("偏好技师", data.favorite_technician_name || "-") +
+        statCard("常用项目", data.favorite_service_name || "-") +
+        statCard("习惯时段", data.preferred_time_period || "-") +
+        statCard("价格敏感度", data.price_sensitivity);
+
+    const box = document.getElementById("preferenceBox");
+    const lines = [];
+    if (data.days_since_last_appointment !== null && data.days_since_last_appointment !== undefined) {
+        lines.push("距上次到店 " + data.days_since_last_appointment + " 天");
+    }
+    if (data.favorite_duration) lines.push("平均单次工时约 " + data.favorite_duration + " 分钟");
+    if (data.addon_accept_rate !== null && data.addon_accept_rate !== undefined) {
+        lines.push("加项接受率 " + Math.round(data.addon_accept_rate * 100) + "%");
+    }
+    if (data.total_spending) lines.push("累计消费约 " + data.total_spending + " 元");
+    if (data.consultation_topics && data.consultation_topics.length) {
+        lines.push("常咨询话题：" + data.consultation_topics.join("、"));
+    }
+    if (data.vehicles && data.vehicles.length) {
+        lines.push("名下车辆：" + data.vehicles.map(function (vehicle) { return vehicle.plate_no; }).join("、"));
+    }
+    box.innerHTML = lines.length ? lines.join("<br>") : "还没有足够的记录。";
+
+    const behaviors = await api("/api/vehicle-behavior/behaviors?owner_ref=" + encodeURIComponent(ownerRef) + "&limit=10");
+    const rows = behaviors.data || [];
+    document.getElementById("behaviorBox").innerHTML = rows.length
+        ? "<table><thead><tr><th>时间</th><th>行为</th><th>详情</th></tr></thead><tbody>" + rows.map(function (row) {
+            return "<tr><td>" + hhmm(row.created_at) + "</td><td><span class=\"badge\">" + row.action_type +
+                "</span></td><td class=\"muted\">" + JSON.stringify(row.action_data).slice(0, 80) + "</td></tr>";
+        }).join("") + "</tbody></table>"
+        : "暂无行为记录。";
+
+    const due = data.due_reminders || [];
+    document.getElementById("dueBox").innerHTML = due.length
+        ? due.map(function (entry) {
+            return "<div style=\"margin-bottom:8px\"><strong>" + entry.plate_no + "</strong>：" +
+                entry.due_items.map(function (item) {
+                    return "<span class=\"badge warn\">" + item.item_name + "</span> " + item.reasons.join("；");
+                }).join("<br>") + "</div>";
+        }).join("")
+        : "暂无到期项目。";
+}
+
+document.getElementById("remindBtn").addEventListener("click", async function () {
+    const ownerRef = document.getElementById("ownerRef").value.trim() || "default_owner";
+    const result = await api("/api/vehicle-behavior/send-reminder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_ref: ownerRef, include_weather: false })
+    });
+    const data = result.data || {};
+    let html = "<div class=\"alert alert-info\">" + (data.message || "") + "</div>";
+    const slots = data.available_slots || [];
+    if (slots.length) {
+        html += "<table><thead><tr><th>时段</th><th>技师</th><th>工位</th><th>工时</th></tr></thead><tbody>" +
+            slots.map(function (slot) {
+                return "<tr><td>" + slot.friendly + "</td><td>" + slot.technician_name + "</td><td>" + slot.bay_name +
+                    "</td><td>" + slot.duration_minutes + " 分钟</td></tr>";
+            }).join("") + "</tbody></table>";
+    }
+    document.getElementById("reminderBox").innerHTML = html;
+});
+
+document.getElementById("generateBtn").addEventListener("click", async function () {
+    const result = await api("/api/vehicle-behavior/generate-reminders", { method: "POST" });
+    alert(result.message || "已生成");
+});
+
+document.getElementById("loadBtn").addEventListener("click", loadAnalysis);
+loadAnalysis();
+</script>
+{% endblock %}

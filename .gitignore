@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Data & runtime artifacts ---
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.faiss
+*.index
+*.pkl
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Tests / coverage ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- IDE / OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

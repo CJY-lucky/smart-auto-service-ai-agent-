@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}车辆档案 · 智保养{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <div class="card">
+        <h2>车辆档案与保养周期</h2>
+        <div id="vehicleList" class="muted">加载中…</div>
+    </div>
+    <div class="card">
+        <h2>新增 / 更新车辆</h2>
+        <div class="grid grid-2">
+            <input id="ownerRef" placeholder="车主标识（默认 default_owner）">
+            <input id="plateNo" placeholder="车牌号，例如 京A12345">
+            <input id="model" placeholder="车型，例如 卡罗拉">
+            <input id="year" placeholder="年款，例如 2020">
+            <input id="mileage" placeholder="当前里程（公里）">
+            <input id="oilSpec" placeholder="机油规格，例如 0W-20 全合成">
+            <input id="purchaseDate" placeholder="上牌日期 YYYY-MM-DD">
+            <input id="lastServiceDate" placeholder="上次保养日期 YYYY-MM-DD">
+        </div>
+        <button id="saveBtn" style="margin-top:12px">保存档案</button>
+        <div class="muted" style="margin-top:10px">保存后系统会按里程与时间双维度推算到期项目。</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadVehicles() {
+    const result = await api("/api/vehicles");
+    const vehicles = result.data || [];
+    const box = document.getElementById("vehicleList");
+    if (!vehicles.length) { box.innerHTML = "还没有车辆档案，先添加一台车吧。"; return; }
+    const rows = [];
+    for (const vehicle of vehicles) {
+        const detail = await api("/api/vehicles/" + vehicle.id);
+        const data = detail.data || {};
+        const due = (data.due_items || []).slice(0, 3).map(function (item) {
+            return "<span class=\"badge warn\">" + item.item_name + "</span>";
+        }).join(" ");
+        const next = data.next_service || {};
+        rows.push("<tr><td>" + vehicle.plate_no + "<div class=\"muted\">" + (vehicle.model || "") + " " +
+            (vehicle.year || "") + "</div></td><td>" + (vehicle.mileage || "-") + " km</td><td>" +
+            (data.next_service ? (next.next_mileage + " km 前") : "-") + "</td><td>" + (due || "<span class=\"badge ok\">暂未到期</span>") +
+            "</td><td class=\"muted\">" + (data.next_service && data.next_service.remaining_km !== null ? ("还差 " + data.next_service.remaining_km + " 公里") : "") +
+            "</td></tr>");
+    }
+    box.innerHTML = "<table><thead><tr><th>车辆</th><th>里程</th><th>下次保养</th><th>到期项目</th><th>提示</th></tr></thead><tbody>" +
+        rows.join("") + "</tbody></table>";
+}
+
+document.getElementById("saveBtn").addEventListener("click", async function () {
+    const plate = document.getElementById("plateNo").value.trim();
+    if (!plate) { alert("请填写车牌号"); return; }
+    const payload = {
+        owner_ref: document.getElementById("ownerRef").value.trim() || "default_owner",
+        plate_no: plate,
+        model: document.getElementById("model").value.trim() || null,
+        year: parseInt(document.getElementById("year").value, 10) || null,
+        mileage: parseInt(document.getElementById("mileage").value, 10) || null,
+        oil_spec: document.getElementById("oilSpec").value.trim() || null,
+        purchase_date: document.getElementById("purchaseDate").value.trim() || null,
+        last_service_date: document.getElementById("lastServiceDate").value.trim() || null
+    };
+    const result = await api("/api/vehicles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+    if (result.success === false) { alert(result.error || "保存失败"); return; }
+    loadVehicles();
+});
+
+loadVehicles();
+</script>
+{% endblock %}

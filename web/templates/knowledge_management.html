@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}知识库管理 · 智保养{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+    <div class="card">
+        <h2>知识库条目</h2>
+        <div class="row" style="margin-bottom:10px">
+            <input id="searchInput" placeholder="输入关键词检索，例如：刹车油多久换">
+            <button id="searchBtn">检索</button>
+            <button class="ghost" id="refreshBtn">刷新</button>
+        </div>
+        <div id="docList" class="muted">加载中…</div>
+    </div>
+    <div class="grid">
+        <div class="card">
+            <h2>新增知识</h2>
+            <div class="grid">
+                <input id="newCategory" placeholder="分类，例如：保养周期">
+                <input id="newKeywords" placeholder="关键词，用逗号分隔">
+                <textarea id="newContent" placeholder="知识内容"></textarea>
+                <button id="addBtn">保存</button>
+            </div>
+        </div>
+        <div class="card">
+            <h2>检索结果</h2>
+            <div id="searchResult" class="muted">还没有检索。</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadDocs() {
+    const result = await api("/api/knowledge");
+    const data = result.data || {};
+    const docs = data.documents || [];
+    const box = document.getElementById("docList");
+    if (!docs.length) { box.innerHTML = "知识库还是空的。"; return; }
+    box.innerHTML = "<table><thead><tr><th>ID</th><th>分类</th><th>内容</th><th>操作</th></tr></thead><tbody>" +
+        docs.map(function (doc) {
+            return "<tr><td>" + doc.id + "</td><td><span class=\"badge info\">" + doc.category + "</span></td><td>" +
+                doc.content + "</td><td><button class=\"ghost small\" data-del=\"" + doc.id + "\">删除</button></td></tr>";
+        }).join("") + "</tbody></table>";
+    document.querySelectorAll("[data-del]").forEach(function (button) {
+        button.addEventListener("click", async function () {
+            await api("/api/knowledge/" + button.dataset.del, { method: "DELETE" });
+            loadDocs();
+        });
+    });
+}
+
+document.getElementById("addBtn").addEventListener("click", async function () {
+    const content = document.getElementById("newContent").value.trim();
+    const category = document.getElementById("newCategory").value.trim() || "通用";
+    const keywords = document.getElementById("newKeywords").value.split(/[,，]/).map(function (item) { return item.trim(); }).filter(Boolean);
+    if (!content) { alert("请填写知识内容"); return; }
+    await api("/api/knowledge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: content, category: category, keywords: keywords })
+    });
+    document.getElementById("newContent").value = "";
+    loadDocs();
+});
+
+document.getElementById("searchBtn").addEventListener("click", async function () {
+    const query = document.getElementById("searchInput").value.trim();
+    if (!query) return;
+    const result = await api("/api/knowledge/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: query, top_k: 3 })
+    });
+    const docs = result.data || [];
+    const box = document.getElementById("searchResult");
+    if (!docs.length) { box.innerHTML = "没有检索到相关内容。"; return; }
+    box.innerHTML = docs.map(function (doc) {
+        return "<div style=\"margin-bottom:10px\"><span class=\"badge info\">" + doc.category +
+            "</span> <span class=\"muted\">相关度 " + Number(doc.score || 0).toFixed(3) + "</span><div>" + doc.content + "</div></div>";
+    }).join("");
+});
+
+document.getElementById("refreshBtn").addEventListener("click", loadDocs);
+loadDocs();
+</script>
+{% endblock %}

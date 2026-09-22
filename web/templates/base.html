@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}智保养 · 门店智能前台{% endblock %}</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="topbar">
+    <div class="brand">智保养 · 门店智能前台</div>
+    <nav>
+        <a href="/" class="{{ 'active' if active == 'chat' else '' }}">智能对话</a>
+        <a href="/schedule" class="{{ 'active' if active == 'schedule' else '' }}">车间排班</a>
+        <a href="/technician" class="{{ 'active' if active == 'technician' else '' }}">技师管理</a>
+        <a href="/bay" class="{{ 'active' if active == 'bay' else '' }}">工位管理</a>
+        <a href="/vehicle" class="{{ 'active' if active == 'vehicle' else '' }}">车辆档案</a>
+        <a href="/behavior" class="{{ 'active' if active == 'behavior' else '' }}">车主行为</a>
+        <a href="/knowledge" class="{{ 'active' if active == 'knowledge' else '' }}">知识库</a>
+        <a href="/docs">API 文档</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="muted">{{ today }} {{ weekday }} · 营业时间 {{ business_hours }}</div>
+</div>
+<div class="container">
+{% block content %}{% endblock %}
+</div>
+<script>
+async function api(path, options) {
+    const response = await fetch(path, options);
+    const text = await response.text();
+    try { return JSON.parse(text); } catch (error) { return { raw: text }; }
+}
+function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+function hhmm(value) {
+    if (!value) return "-";
+    const text = String(value);
+    return text.length >= 16 ? text.slice(11, 16) : text;
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

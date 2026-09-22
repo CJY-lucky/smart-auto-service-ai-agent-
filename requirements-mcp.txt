@@ -1,0 +1,3 @@
+# 可选：把天气等外部能力以 MCP 工具的形式对外提供
+# 安装后可用：python -m mcp_server.weather_server
+mcp>=1.0.0
